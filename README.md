@@ -2,7 +2,13 @@
 
 A tiny local server for testing outgoing notifications. It captures emails over SMTP and SMS over an HTTP gateway, and shows both in one web inbox.
 
-<img width="800" height="400" alt="Screenshot 2026-05-12 at 12 32 33 AM" src="https://github.com/user-attachments/assets/fe2f6093-a54b-4177-9c58-ba291e7f1e61" />
+### Email
+
+<img width="800" alt="Email inbox" src="docs/images/email-inbox.png" />
+
+### SMS
+
+<img width="800" alt="SMS inbox" src="docs/images/sms-message.png" />
 
 ## Prerequisites
 
