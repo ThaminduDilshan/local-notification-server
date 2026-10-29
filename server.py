@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import threading
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from email import policy
@@ -15,6 +16,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qs, urlsplit
 
 try:
     import yaml  # type: ignore
@@ -107,6 +109,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "refresh_ms": 3000,
 }
 
+SMS_GATEWAY_PATH = "/sms/send"
+
+# Field names checked, case-insensitively, when extracting an SMS from an arbitrary payload.
+SMS_RECIPIENT_KEYS = (
+    "to", "recipient", "phone", "phone_number", "phonenumber",
+    "mobile", "mobilenumber", "msisdn", "number", "destination",
+)
+SMS_SENDER_KEYS = ("from", "sender", "sender_id", "senderid")
+SMS_BODY_KEYS = ("body", "text", "message", "content", "msg")
+
 
 @dataclass
 class CapturedEmail:
@@ -124,24 +136,41 @@ class CapturedEmail:
     is_read: bool = False
 
 
-class EmailStore:
+@dataclass
+class CapturedSMS:
+    id: int
+    received_at: str
+    peer: str
+    message_id: str
+    method: str
+    path: str
+    content_type: str
+    headers: Dict[str, str]
+    sender: str
+    recipient: str
+    body: str
+    raw: str
+    is_read: bool = False
+
+
+class MessageStore:
     def __init__(self, max_messages: int = 500) -> None:
-        self._messages: List[CapturedEmail] = []
+        self._messages: List[Any] = []
         self._next_id = 1
         self._max_messages = max_messages
         self._lock = threading.Lock()
 
-    def add(self, msg: CapturedEmail) -> None:
+    def add(self, msg: Any) -> None:
         with self._lock:
             self._messages.insert(0, msg)
             if len(self._messages) > self._max_messages:
                 self._messages = self._messages[: self._max_messages]
 
-    def all(self) -> List[CapturedEmail]:
+    def all(self) -> List[Any]:
         with self._lock:
             return list(self._messages)
 
-    def get(self, message_id: int) -> Optional[CapturedEmail]:
+    def get(self, message_id: int) -> Optional[Any]:
         with self._lock:
             for message in self._messages:
                 if message.id == message_id:
@@ -178,7 +207,7 @@ class SMTPConnection:
         self,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
-        store: EmailStore,
+        store: MessageStore,
         smtp_auth_methods: List[str],
     ) -> None:
         self.reader = reader
@@ -322,86 +351,134 @@ class SMTPConnection:
 
 class InboxHandler(BaseHTTPRequestHandler):
     ui_path: Path
-    store: EmailStore
+    email_store: MessageStore
+    sms_store: MessageStore
     config: Dict[str, Any]
 
     def do_GET(self) -> None:
-        if self.path == "/":
+        path = urlsplit(self.path).path
+        if path == "/":
             self._serve_ui()
             return
 
-        if self.path == "/api/emails":
-            all_messages = [asdict(m) for m in self.store.all()]
-            self._send_json({"emails": all_messages})
-            return
-
-        if self.path == "/api/config":
+        if path == "/api/config":
             self._send_json({"config": self.config})
             return
 
-        if self.path.startswith("/api/emails/"):
-            maybe_id = self.path.replace("/api/emails/", "", 1)
-            try:
-                message_id = int(maybe_id)
-            except ValueError:
-                self._send_json({"error": "invalid id"}, status=HTTPStatus.BAD_REQUEST)
-                return
-
-            message = self.store.get(message_id)
-            if message is None:
-                self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
-                return
-
-            self._send_json(asdict(message))
+        if path == SMS_GATEWAY_PATH:
+            self._receive_sms()
             return
 
-        self.send_error(HTTPStatus.NOT_FOUND, "Not found")
-
-    def do_DELETE(self) -> None:
-        if self.path == "/api/emails":
-            self.store.clear()
-            self._send_json({"status": "ok"})
-            return
-
-        if self.path.startswith("/api/emails/"):
-            maybe_id = self.path.replace("/api/emails/", "", 1)
-            try:
-                message_id = int(maybe_id)
-            except ValueError:
-                self._send_json({"error": "invalid id"}, status=HTTPStatus.BAD_REQUEST)
-                return
-
-            if not self.store.delete(message_id):
-                self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
-                return
-
-            self._send_json({"status": "ok"})
-            return
-
-        self.send_error(HTTPStatus.NOT_FOUND, "Not found")
-
-    def do_PATCH(self) -> None:
-        if not self.path.startswith("/api/emails/") or not self.path.endswith("/read"):
+        collection = self._collection(path)
+        if collection is None:
             self.send_error(HTTPStatus.NOT_FOUND, "Not found")
             return
 
-        maybe_id = self.path.replace("/api/emails/", "", 1).replace("/read", "", 1)
-        maybe_id = maybe_id.strip("/")
-        try:
-            message_id = int(maybe_id)
-        except ValueError:
-            self._send_json({"error": "invalid id"}, status=HTTPStatus.BAD_REQUEST)
+        key, store, rest = collection
+        if not rest:
+            self._send_json({key: [asdict(m) for m in store.all()]})
             return
 
-        if not self.store.mark_read(message_id):
+        message_id = self._parse_id(rest)
+        if message_id is None:
+            return
+
+        message = store.get(message_id)
+        if message is None:
+            self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+
+        self._send_json(asdict(message))
+
+    def do_POST(self) -> None:
+        path = urlsplit(self.path).path
+        if path == SMS_GATEWAY_PATH:
+            self._receive_sms()
+        else:
+            self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+
+    def do_DELETE(self) -> None:
+        collection = self._collection(urlsplit(self.path).path)
+        if collection is None:
+            self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+            return
+
+        _, store, rest = collection
+        if not rest:
+            store.clear()
+            self._send_json({"status": "ok"})
+            return
+
+        message_id = self._parse_id(rest)
+        if message_id is None:
+            return
+
+        if not store.delete(message_id):
             self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
             return
 
         self._send_json({"status": "ok"})
-        return
+
+    def do_PATCH(self) -> None:
+        collection = self._collection(urlsplit(self.path).path)
+        if collection is None or not collection[2].endswith("/read"):
+            self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+            return
+
+        _, store, rest = collection
+        message_id = self._parse_id(rest[: -len("/read")])
+        if message_id is None:
+            return
+
+        if not store.mark_read(message_id):
+            self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+
+        self._send_json({"status": "ok"})
 
     def log_message(self, format: str, *args: Any) -> None:
         return
+
+    def _collection(self, path: str) -> Optional[tuple[str, MessageStore, str]]:
+        for prefix, key, store in (
+            ("/api/emails", "emails", self.email_store),
+            ("/api/sms", "sms", self.sms_store),
+        ):
+            if path == prefix or path.startswith(prefix + "/"):
+                return key, store, path[len(prefix):].strip("/")
+        return None
+
+    def _parse_id(self, value: str) -> Optional[int]:
+        try:
+            return int(value)
+        except ValueError:
+            self._send_json({"error": "invalid id"}, status=HTTPStatus.BAD_REQUEST)
+            return None
+
+    def _receive_sms(self) -> None:
+        url = urlsplit(self.path)
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8", errors="replace") if length > 0 else ""
+        content_type = self.headers.get("Content-Type", "")
+        fields = parse_sms_payload(raw, content_type, parse_qs(url.query))
+
+        sms = CapturedSMS(
+            id=self.sms_store.next_id(),
+            received_at=datetime.now(timezone.utc).isoformat(),
+            peer=str(self.client_address),
+            message_id=str(uuid.uuid4()),
+            method=self.command,
+            path=self.path,
+            content_type=content_type,
+            headers=dict(self.headers.items()),
+            sender=fields["sender"],
+            recipient=fields["recipient"],
+            body=fields["body"],
+            raw=raw,
+        )
+        self.sms_store.add(sms)
+
+        self._send_json({"status": "accepted", "id": sms.id, "message_id": sms.message_id})
 
     def _send_json(self, payload: Dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
         content = json.dumps(payload).encode("utf-8")
@@ -418,6 +495,37 @@ class InboxHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)
+
+
+def parse_sms_payload(raw: str, content_type: str, query: Dict[str, List[str]]) -> Dict[str, str]:
+    """Extract sender, recipient and text from a JSON, form or plain text SMS request."""
+    fields: Dict[str, str] = {key.lower(): values[0] for key, values in query.items() if values}
+
+    parsed: Any = None
+    if "application/x-www-form-urlencoded" in content_type.lower():
+        parsed = {key: values[0] for key, values in parse_qs(raw, keep_blank_values=True).items()}
+    elif raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            parsed = None
+
+    if isinstance(parsed, dict):
+        for key, value in parsed.items():
+            if isinstance(value, (str, int, float)):
+                fields[str(key).lower()] = str(value)
+
+    def pick(keys: tuple[str, ...]) -> str:
+        for key in keys:
+            if fields.get(key):
+                return fields[key]
+        return ""
+
+    return {
+        "recipient": pick(SMS_RECIPIENT_KEYS),
+        "sender": pick(SMS_SENDER_KEYS),
+        "body": pick(SMS_BODY_KEYS) or raw.strip(),
+    }
 
 
 def extract_bodies(message: Any) -> tuple[str, str]:
@@ -451,25 +559,33 @@ def extract_bodies(message: Any) -> tuple[str, str]:
     return "\n".join(text_parts).strip(), "\n".join(html_parts).strip()
 
 
-def make_handler(store: EmailStore, ui_path: Path, config: Dict[str, Any]):
+def make_handler(email_store: MessageStore, sms_store: MessageStore, ui_path: Path, config: Dict[str, Any]):
     class _Handler(InboxHandler):
         pass
 
-    _Handler.store = store
+    _Handler.email_store = email_store
+    _Handler.sms_store = sms_store
     _Handler.ui_path = ui_path
     _Handler.config = config
     return _Handler
 
 
-def run_http_server(host: str, port: int, store: EmailStore, ui_path: Path, config: Dict[str, Any]) -> ThreadingHTTPServer:
-    handler_cls = make_handler(store, ui_path, config)
+def run_http_server(
+    host: str,
+    port: int,
+    email_store: MessageStore,
+    sms_store: MessageStore,
+    ui_path: Path,
+    config: Dict[str, Any],
+) -> ThreadingHTTPServer:
+    handler_cls = make_handler(email_store, sms_store, ui_path, config)
     httpd = ThreadingHTTPServer((host, port), handler_cls)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     return httpd
 
 
-async def run_smtp_server(host: str, port: int, store: EmailStore, smtp_auth_methods: List[str]) -> None:
+async def run_smtp_server(host: str, port: int, store: MessageStore, smtp_auth_methods: List[str]) -> None:
     async def on_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         session = SMTPConnection(reader, writer, store, smtp_auth_methods=smtp_auth_methods)
         try:
@@ -484,7 +600,7 @@ async def run_smtp_server(host: str, port: int, store: EmailStore, smtp_auth_met
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Local SMTP catcher with inbox UI")
+    parser = argparse.ArgumentParser(description="Local notification server: SMTP catcher and SMS gateway with an inbox UI")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--smtp-host")
     parser.add_argument("--smtp-port", type=int)
@@ -573,6 +689,7 @@ def build_config(args: argparse.Namespace) -> Dict[str, Any]:
 
     config["smtp_endpoint"] = f"{config['smtp_host']}:{config['smtp_port']}"
     config["ui_url"] = f"http://{config['http_host']}:{config['http_port']}"
+    config["sms_gateway_url"] = f"{config['ui_url']}{SMS_GATEWAY_PATH}"
 
     return config
 
@@ -586,10 +703,14 @@ def main() -> None:
         raise FileNotFoundError(f"UI file not found: {ui_path}")
 
     config = build_config(args)
-    store = EmailStore(max_messages=int(config["max_messages"]))
-    httpd = run_http_server(str(config["http_host"]), int(config["http_port"]), store, ui_path, config)
+    email_store = MessageStore(max_messages=int(config["max_messages"]))
+    sms_store = MessageStore(max_messages=int(config["max_messages"]))
+    httpd = run_http_server(
+        str(config["http_host"]), int(config["http_port"]), email_store, sms_store, ui_path, config
+    )
 
     print(f"SMTP listening on {config['smtp_endpoint']}")
+    print(f"SMS gateway: {config['sms_gateway_url']}")
     print(f"Inbox UI: {config['ui_url']}")
 
     try:
@@ -597,7 +718,7 @@ def main() -> None:
             run_smtp_server(
                 str(config["smtp_host"]),
                 int(config["smtp_port"]),
-                store,
+                email_store,
                 smtp_auth_methods=list(config["smtp_auth_methods"]),
             )
         )

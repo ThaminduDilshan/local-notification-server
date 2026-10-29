@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Local SMTP Inbox</title>
+  <title>Local Notification Inbox</title>
   <style>
     :root {
       --bg: #f3f5f6;
@@ -73,6 +73,48 @@
       display: flex;
       gap: 8px;
     }
+
+    .tabs {
+      display: inline-flex;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #f8fafc;
+    }
+
+    .tab {
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 600;
+      padding: 6px 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tab:hover { color: var(--ink); }
+
+    .tab.active {
+      background: #fff;
+      color: var(--brand);
+      box-shadow: 0 1px 3px rgba(17, 24, 39, 0.12);
+    }
+
+    .count {
+      min-width: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: var(--brand);
+      color: #fff;
+      font-size: 0.7rem;
+      line-height: 18px;
+      text-align: center;
+    }
+
+    .count:empty { display: none; }
 
     button {
       border: 1px solid var(--border);
@@ -362,7 +404,7 @@
     .headers strong {
       color: #111827;
       display: inline-block;
-      width: 75px;
+      width: 100px;
     }
 
     .body {
@@ -380,6 +422,294 @@
       font-size: 0.87rem;
       line-height: 1.45;
     }
+
+    .phone-column { display: none; }
+
+    .layout.sms-mode .list-card { display: none; }
+
+    .layout.sms-mode .pane { grid-template-rows: 1fr; }
+
+    .layout.sms-mode .headers { display: none; }
+
+    .layout.sms-mode .phone-column {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .phone {
+      height: min(680px, calc(100% - 32px));
+      aspect-ratio: 300 / 620;
+      padding: 10px;
+      border-radius: 46px;
+      background: #1c1c1e;
+      box-shadow: 0 20px 50px rgba(17, 24, 39, 0.25), inset 0 0 0 2px #3a3a3c;
+    }
+
+    .phone-screen {
+      position: relative;
+      height: 100%;
+      border-radius: 37px;
+      background: #fff;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+      color: #000;
+    }
+
+    .island {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 34%;
+      height: 26px;
+      border-radius: 20px;
+      background: #000;
+    }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 46px;
+      flex-shrink: 0;
+      padding: 12px 22px 0 30px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      background: #f9f9f9;
+    }
+
+    .status-icons {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .phone-content {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .inbox-header {
+      padding: 4px 16px 8px;
+      background: #f9f9f9;
+      border-bottom: 1px solid #e5e5ea;
+    }
+
+    .inbox-title {
+      margin: 0;
+      font-size: 1.6rem;
+      font-weight: 700;
+    }
+
+    .thread {
+      display: grid;
+      grid-template-columns: 10px 40px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      padding: 10px 12px 10px 6px;
+      cursor: pointer;
+    }
+
+    .thread:hover { background: #f2f2f7; }
+
+    .thread-dot {
+      width: 9px;
+      height: 9px;
+      margin-top: 15px;
+      border-radius: 50%;
+    }
+
+    .thread.unread .thread-dot { background: #007aff; }
+
+    .thread-text {
+      min-width: 0;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #e5e5ea;
+    }
+
+    .thread-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .thread-name {
+      font-weight: 600;
+      font-size: 0.86rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .thread-time {
+      color: #8e8e93;
+      font-size: 0.75rem;
+      white-space: nowrap;
+    }
+
+    .thread-preview {
+      color: #8e8e93;
+      font-size: 0.8rem;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .inbox-empty {
+      padding: 40px 16px;
+      text-align: center;
+      color: #8e8e93;
+      font-size: 0.85rem;
+    }
+
+    .avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(#a5abb8, #858a96);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 600;
+    }
+
+    .thread .avatar {
+      width: 40px;
+      height: 40px;
+    }
+
+    .chat-header {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 12px 10px;
+      background: #f9f9f9;
+      border-bottom: 1px solid #e5e5ea;
+    }
+
+    .chat-back,
+    .chat-delete {
+      position: absolute;
+      top: 6px;
+      border: 0;
+      background: transparent;
+      color: #007aff;
+      padding: 2px 6px;
+      line-height: 1;
+    }
+
+    .chat-back {
+      left: 8px;
+      font-size: 1.8rem;
+    }
+
+    .chat-delete {
+      right: 10px;
+      top: 10px;
+    }
+
+    .chat-back:hover,
+    .chat-delete:hover { opacity: 0.6; }
+
+    .chat-name { font-size: 0.75rem; }
+
+    .chat-body {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .chat-time {
+      text-align: center;
+      color: #8e8e93;
+      font-size: 0.7rem;
+      margin: 2px 0 8px;
+    }
+
+    .chat-time strong { font-weight: 600; }
+
+    .bubble {
+      align-self: flex-start;
+      max-width: 80%;
+      background: #e9e9eb;
+      border-radius: 18px;
+      padding: 8px 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.86rem;
+      line-height: 1.35;
+    }
+
+    .chat-input {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px 4px;
+    }
+
+    .chat-plus {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #e9e9eb;
+      color: #8e8e93;
+      display: grid;
+      place-items: center;
+      font-size: 1.2rem;
+    }
+
+    .chat-field {
+      flex: 1;
+      border: 1px solid #d1d1d6;
+      border-radius: 18px;
+      padding: 6px 12px;
+      color: #c7c7cc;
+      font-size: 0.8rem;
+    }
+
+    .home-indicator {
+      width: 36%;
+      height: 5px;
+      flex-shrink: 0;
+      border-radius: 3px;
+      background: #000;
+      margin: 6px auto 8px;
+    }
+
+    .phone-caption {
+      min-height: 20px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .request-block {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .request-title {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: #f8fafc;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .request-block pre { padding: 12px; }
 
     .empty {
       color: var(--muted);
@@ -414,6 +744,10 @@
       .config-item {
         width: 240px;
       }
+
+      .phone {
+        height: 560px;
+      }
     }
   </style>
 </head>
@@ -421,8 +755,12 @@
   <div class="shell">
     <div class="top">
       <div>
-        <h1 class="title">Local SMTP Inbox</h1>
-        <p class="subtitle">Catch and inspect outgoing emails</p>
+        <h1 class="title">Local Notification Inbox</h1>
+        <p class="subtitle">Catch and inspect outgoing emails and SMS</p>
+      </div>
+      <div class="tabs" role="tablist">
+        <button class="tab" data-tab="email" role="tab">Email <span class="count" id="emailCount"></span></button>
+        <button class="tab" data-tab="sms" role="tab">SMS <span class="count" id="smsCount"></span></button>
       </div>
       <div class="actions">
         <button id="refreshBtn">Refresh</button>
@@ -430,12 +768,13 @@
       </div>
     </div>
 
-    <div class="layout">
+    <div class="layout" id="layout">
       <div class="left-column">
         <div class="card list-card">
           <div class="section-head">Email List</div>
-          <div class="list" id="emailList"></div>
+          <div class="list" id="messageList"></div>
         </div>
+        <div class="phone-column" id="phoneColumn"></div>
       </div>
 
       <div class="card pane">
@@ -458,16 +797,39 @@
   </div>
 
   <script>
-    const emailListEl = document.getElementById("emailList");
+    const layoutEl = document.getElementById("layout");
+    const messageListEl = document.getElementById("messageList");
+    const phoneColumnEl = document.getElementById("phoneColumn");
     const headersEl = document.getElementById("headers");
     const bodyEl = document.getElementById("body");
     const refreshBtn = document.getElementById("refreshBtn");
     const clearBtn = document.getElementById("clearBtn");
     const configGridEl = document.getElementById("configGrid");
     const copyConfigBtn = document.getElementById("copyConfigBtn");
+    const tabButtons = document.querySelectorAll(".tab");
 
-    let emails = [];
-    let selectedId = null;
+    const tabs = {
+      email: {
+        endpoint: "/api/emails",
+        key: "emails",
+        select: "Select an email",
+        placeholder: "Email body will appear here",
+        countEl: document.getElementById("emailCount"),
+      },
+      sms: {
+        endpoint: "/api/sms",
+        key: "sms",
+        select: "",
+        placeholder: "Open a message on the phone to see its request details",
+        countEl: document.getElementById("smsCount"),
+      },
+    };
+    const state = {
+      email: { items: [], selectedId: null },
+      sms: { items: [], selectedId: null },
+    };
+
+    let activeTab = location.hash === "#sms" ? "sms" : "email";
     let config = null;
     let pollInterval = 3000;
     let pollTimer = null;
@@ -513,8 +875,16 @@
       return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
     }
 
+    function fmtClock(date) {
+      return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+
+    function isToday(date) {
+      return date.toDateString() === new Date().toDateString();
+    }
+
     function escapeHtml(value) {
-      return value
+      return String(value)
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;")
@@ -522,13 +892,41 @@
         .replaceAll("'", "&#39;");
     }
 
+    function prettyBody(raw) {
+      try {
+        return JSON.stringify(JSON.parse(raw), null, 2);
+      } catch (_) {
+        return raw;
+      }
+    }
+
+    function renderTabs() {
+      tabButtons.forEach((btn) => {
+        const isActive = btn.dataset.tab === activeTab;
+        btn.classList.toggle("active", isActive);
+        btn.setAttribute("aria-selected", String(isActive));
+      });
+      Object.entries(tabs).forEach(([name, tab]) => {
+        const unread = state[name].items.filter((it) => !it.is_read).length;
+        tab.countEl.textContent = unread ? String(unread) : "";
+      });
+      layoutEl.classList.toggle("sms-mode", activeTab === "sms");
+    }
+
     function renderList() {
-      if (!emails.length) {
-        emailListEl.innerHTML = '<div class="empty">No emails yet</div>';
+      renderTabs();
+      if (activeTab === "sms") {
+        renderPhone();
         return;
       }
 
-      emailListEl.innerHTML = emails.map((email) => {
+      const { items, selectedId } = state.email;
+      if (!items.length) {
+        messageListEl.innerHTML = '<div class="empty">No emails yet</div>';
+        return;
+      }
+
+      messageListEl.innerHTML = items.map((email) => {
         const isUnread = !email.is_read;
         const cls = ["item", email.id === selectedId ? "active" : "", isUnread ? "unread" : ""]
           .filter(Boolean)
@@ -551,41 +949,169 @@
         `;
       }).join("");
 
-      document.querySelectorAll(".item").forEach((item) => {
+      messageListEl.querySelectorAll(".item").forEach((item) => {
         item.addEventListener("click", async () => {
           const id = Number(item.dataset.id);
-          await openEmail(id);
+          await openItem(id);
         });
       });
 
-      document.querySelectorAll(".delete-btn").forEach((btn) => {
+      messageListEl.querySelectorAll(".delete-btn").forEach((btn) => {
         btn.addEventListener("click", async (event) => {
           event.stopPropagation();
           const id = Number(btn.dataset.deleteId);
-          await deleteEmail(id);
+          await deleteItem(id);
         });
       });
     }
 
-    async function openEmail(id) {
-      selectedId = id;
-      const email = emails.find((it) => it.id === id);
-      if (email && !email.is_read) {
-        email.is_read = true;
-        fetch(`/api/emails/${id}/read`, { method: "PATCH" }).catch(() => {});
+    function senderAvatar(sms) {
+      return sms.sender ? escapeHtml(sms.sender.trim().charAt(0).toUpperCase()) : "&#128100;";
+    }
+
+    function renderPhoneInbox(items) {
+      const threads = items.map((sms) => {
+        const received = new Date(sms.received_at);
+        const time = isToday(received) ? fmtClock(received) : received.toLocaleDateString();
+        return `
+          <div class="thread ${sms.is_read ? "" : "unread"}" data-id="${sms.id}">
+            <span class="thread-dot"></span>
+            <div class="avatar">${senderAvatar(sms)}</div>
+            <div class="thread-text">
+              <div class="thread-top">
+                <span class="thread-name">${escapeHtml(sms.sender || "Unknown sender")}</span>
+                <span class="thread-time">${escapeHtml(time)} &rsaquo;</span>
+              </div>
+              <div class="thread-preview">${escapeHtml(sms.body || "(empty message)")}</div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div class="inbox-header"><h2 class="inbox-title">Messages</h2></div>
+        <div class="phone-content">
+          ${threads || '<div class="inbox-empty">No messages</div>'}
+        </div>
+      `;
+    }
+
+    function renderPhoneChat(sms) {
+      const received = new Date(sms.received_at);
+      const day = isToday(received) ? "Today" : received.toLocaleDateString();
+      return `
+        <div class="chat-header">
+          <button class="chat-back" title="Back" aria-label="Back">&lsaquo;</button>
+          <div class="avatar">${senderAvatar(sms)}</div>
+          <div class="chat-name">${escapeHtml(sms.sender || "Unknown sender")}</div>
+          <button class="chat-delete" data-delete-id="${sms.id}" title="Delete SMS" aria-label="Delete SMS">
+            <svg width="16" height="17" viewBox="0 0 16 17" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M1.5 4h13M6 4V2h4v2M3 4l1 11h8l1-11M6.5 7v5M9.5 7v5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        <div class="phone-content chat-body">
+          <div class="chat-time"><strong>Text Message</strong><br>${escapeHtml(day)} ${escapeHtml(fmtClock(received))}</div>
+          <div class="bubble">${escapeHtml(sms.body || "(empty message)")}</div>
+        </div>
+        <div class="chat-input">
+          <span class="chat-plus">+</span>
+          <span class="chat-field">Text Message</span>
+        </div>
+      `;
+    }
+
+    function renderPhone() {
+      const { items, selectedId } = state.sms;
+      const sms = items.find((it) => it.id === selectedId);
+      const previous = phoneColumnEl.querySelector(".phone-content");
+      const previousScroll = previous && previous.dataset.screen === String(selectedId) ? previous.scrollTop : 0;
+      let caption = "";
+      if (sms) {
+        caption = sms.recipient ? `To: ${sms.recipient}` : "Recipient not in payload";
+      }
+
+      phoneColumnEl.innerHTML = `
+        <div class="phone">
+          <div class="phone-screen">
+            <div class="island"></div>
+            <div class="status-bar">
+              <span>${escapeHtml(fmtClock(new Date()).replace(/\s?[AP]M$/i, ""))}</span>
+              <span class="status-icons">
+                <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true">
+                  <rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/>
+                  <rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/>
+                </svg>
+                <svg width="25" height="12" viewBox="0 0 25 12" fill="currentColor" aria-hidden="true">
+                  <rect x="0.5" y="0.5" width="21" height="11" rx="3" fill="none" stroke="currentColor" opacity="0.4"/>
+                  <rect x="2" y="2" width="16" height="8" rx="1.5"/><rect x="23" y="4" width="1.5" height="4" rx="0.75" opacity="0.4"/>
+                </svg>
+              </span>
+            </div>
+            ${sms ? renderPhoneChat(sms) : renderPhoneInbox(items)}
+            <div class="home-indicator"></div>
+          </div>
+        </div>
+        <div class="phone-caption">${escapeHtml(caption)}</div>
+      `;
+
+      const content = phoneColumnEl.querySelector(".phone-content");
+      content.dataset.screen = String(selectedId);
+      content.scrollTop = previousScroll;
+
+      phoneColumnEl.querySelectorAll(".thread").forEach((thread) => {
+        thread.addEventListener("click", async () => {
+          await openItem(Number(thread.dataset.id));
+        });
+      });
+
+      const backBtn = phoneColumnEl.querySelector(".chat-back");
+      if (backBtn) {
+        backBtn.addEventListener("click", () => {
+          state.sms.selectedId = null;
+          renderList();
+          renderSelected();
+        });
+      }
+
+      const deleteBtn = phoneColumnEl.querySelector(".chat-delete");
+      if (deleteBtn) {
+        deleteBtn.addEventListener("click", async () => {
+          await deleteItem(Number(deleteBtn.dataset.deleteId));
+        });
+      }
+    }
+
+    async function openItem(id) {
+      const tabState = state[activeTab];
+      tabState.selectedId = id;
+      const item = tabState.items.find((it) => it.id === id);
+      if (item && !item.is_read) {
+        item.is_read = true;
+        fetch(`${tabs[activeTab].endpoint}/${id}/read`, { method: "PATCH" }).catch(() => {});
       }
       renderList();
       renderSelected();
     }
 
     function renderSelected() {
-      const email = emails.find((it) => it.id === selectedId);
-      if (!email) {
-        headersEl.innerHTML = '<div class="empty">Select an email</div>';
-        bodyEl.innerHTML = '<div class="empty">Email body will appear here</div>';
+      const { items, selectedId } = state[activeTab];
+      const item = items.find((it) => it.id === selectedId);
+      if (!item) {
+        headersEl.innerHTML = `<div class="empty">${tabs[activeTab].select}</div>`;
+        bodyEl.innerHTML = `<div class="empty">${tabs[activeTab].placeholder}</div>`;
         return;
       }
 
+      if (activeTab === "sms") {
+        headersEl.innerHTML = "";
+        renderSelectedSms(item);
+      } else {
+        renderSelectedEmail(item);
+      }
+    }
+
+    function renderSelectedEmail(email) {
       headersEl.innerHTML = `
         <div><strong>Subject</strong>${escapeHtml(email.subject || "(no subject)")}</div>
         <div><strong>From</strong>${escapeHtml(email.header_from || email.mail_from || "-")}</div>
@@ -599,6 +1125,19 @@
       } else {
         bodyEl.innerHTML = `<pre>${escapeHtml(email.text_body || email.raw || "")}</pre>`;
       }
+    }
+
+    function renderSelectedSms(sms) {
+      const headerLines = Object.entries(sms.headers || {})
+        .map(([name, value]) => `${name}: ${value}`)
+        .join("\n");
+      const request = `${sms.method} ${sms.path}\n${headerLines}\n\n${prettyBody(sms.raw)}`;
+      bodyEl.innerHTML = `
+        <div class="request-block">
+          <div class="request-title">Request details</div>
+          <pre>${escapeHtml(request.trimEnd())}</pre>
+        </div>
+      `;
     }
 
     function renderConfigItem(label, value, options = {}) {
@@ -621,18 +1160,26 @@
         return;
       }
 
-      const authMethods = Array.isArray(config.smtp_auth_methods)
-        ? config.smtp_auth_methods.join(", ")
-        : String(config.smtp_auth_methods || "-");
+      if (activeTab === "sms") {
+        configGridEl.innerHTML = [
+          renderConfigItem("Gateway URL", config.sms_gateway_url),
+          renderConfigItem("HTTP Method", "POST"),
+          renderConfigItem("Content Type", "JSON"),
+        ].join("");
+      } else {
+        const authMethods = Array.isArray(config.smtp_auth_methods)
+          ? config.smtp_auth_methods.join(", ")
+          : String(config.smtp_auth_methods || "-");
 
-      configGridEl.innerHTML = [
-        renderConfigItem("Host", config.smtp_host),
-        renderConfigItem("Port", config.smtp_port),
-        renderConfigItem("Username", config.smtp_username),
-        renderConfigItem("Password", config.smtp_password, { secret: true }),
-        renderConfigItem("Auth", authMethods),
-        renderConfigItem("TLS", config.smtp_tls ? "Enabled" : "Disabled"),
-      ].join("");
+        configGridEl.innerHTML = [
+          renderConfigItem("Host", config.smtp_host),
+          renderConfigItem("Port", config.smtp_port),
+          renderConfigItem("Username", config.smtp_username),
+          renderConfigItem("Password", config.smtp_password, { secret: true }),
+          renderConfigItem("Auth", authMethods),
+          renderConfigItem("TLS", config.smtp_tls ? "Enabled" : "Disabled"),
+        ].join("");
+      }
 
       configGridEl.querySelectorAll(".copy-btn").forEach((btn) => {
         btn.addEventListener("click", async () => {
@@ -665,50 +1212,65 @@
       renderConfig();
     }
 
-    async function loadEmails() {
-      const res = await fetch("/api/emails", { cache: "no-store" });
+    async function loadTab(name) {
+      const res = await fetch(tabs[name].endpoint, { cache: "no-store" });
       const data = await res.json();
-      emails = data.emails || [];
+      const tabState = state[name];
+      tabState.items = data[tabs[name].key] || [];
 
-      if (!emails.length) {
-        selectedId = null;
-      } else if (!emails.find((e) => e.id === selectedId)) {
-        selectedId = emails[0].id;
+      // The email list opens the newest message; the phone stays on its inbox until one is tapped.
+      if (!tabState.items.find((it) => it.id === tabState.selectedId)) {
+        tabState.selectedId = name === "email" && tabState.items.length ? tabState.items[0].id : null;
       }
+    }
 
+    async function loadMessages() {
+      await Promise.all(Object.keys(tabs).map(loadTab));
       renderList();
       renderSelected();
     }
 
-    async function clearEmails() {
-      await fetch("/api/emails", { method: "DELETE" });
-      await loadEmails();
+    async function clearMessages() {
+      await fetch(tabs[activeTab].endpoint, { method: "DELETE" });
+      await loadMessages();
     }
 
-    async function deleteEmail(id) {
-      await fetch(`/api/emails/${id}`, { method: "DELETE" });
-      if (selectedId === id) {
-        selectedId = null;
+    async function deleteItem(id) {
+      await fetch(`${tabs[activeTab].endpoint}/${id}`, { method: "DELETE" });
+      if (state[activeTab].selectedId === id) {
+        state[activeTab].selectedId = null;
       }
-      await loadEmails();
+      await loadMessages();
+    }
+
+    function switchTab(name) {
+      activeTab = name;
+      history.replaceState(null, "", name === "sms" ? "#sms" : location.pathname);
+      renderList();
+      renderSelected();
+      renderConfig();
     }
 
     function resetPolling() {
       if (pollTimer) {
         clearInterval(pollTimer);
       }
-      pollTimer = setInterval(loadEmails, pollInterval);
+      pollTimer = setInterval(loadMessages, pollInterval);
     }
 
-    refreshBtn.addEventListener("click", loadEmails);
-    clearBtn.addEventListener("click", clearEmails);
+    tabButtons.forEach((btn) => {
+      btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+    });
+    refreshBtn.addEventListener("click", loadMessages);
+    clearBtn.addEventListener("click", clearMessages);
     copyConfigBtn.addEventListener("click", async () => {
       await copyTextWithFeedback(buildRuntimeYaml(), copyConfigBtn, "Copy YAML", "Copied");
     });
 
     async function init() {
+      renderTabs();
       await loadConfig();
-      await loadEmails();
+      await loadMessages();
       resetPolling();
     }
 
